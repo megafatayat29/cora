@@ -7,6 +7,8 @@ import Home from "./pages/Home";
 import Recommender from "./pages/Recommender";
 import Resources from "./pages/Resources";
 
+import Chatbot from "./components/Chatbot";
+
 export default function App() {
   const [activeMainTab, setActiveMainTab] = useState("home");
   const [selectedIndustry, setSelectedIndustry] = useState(null);
@@ -25,6 +27,11 @@ export default function App() {
         {activeMainTab === "home" && <Home onIndustrySelect={handleIndustrySelect} />}
         {activeMainTab === "recommender" && <Recommender selectedIndustry={selectedIndustry} />}
         {activeMainTab === "resources" && <Resources />}
+        {activeMainTab === "chatbot" && (
+          <div className="p-10">  
+            <Chatbot />
+        </div>
+        )}
       </main>
 
       <Footer />
