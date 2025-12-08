@@ -1,0 +1,239 @@
+import { useState } from 'react';
+
+// Enhanced cache with smart prioritization
+const cache = {
+  industries: null,
+  recommendations: new Map(),
+  searchCache: new Map(),
+  lastUpdate: new Map()
+};
+
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+// Smart industry prioritization for faster search
+const getRelevantIndustries = (query) => {
+  const q = query.toLowerCase();
+  
+  // High priority industries based on query patterns
+  if (q.includes('ai') || q.includes('ml') || q.includes('gpu') || q.includes('p5') || q.includes('p4')) {
+    return ['AI_ML', 'BigData_Analytics', 'Gaming'];
+  }
+  if (q.includes('e2') || q.includes('n2') || q.includes('t2') || q.includes('google')) {
+    return ['Banking', 'Fintech', 'Ecommerce', 'Healthcare'];
+  }
+  if (q.includes('m5') || q.includes('c5') || q.includes('r5') || q.includes('aws')) {
+    return ['Banking', 'Healthcare', 'Fintech', 'Government'];
+  }
+  if (q.includes('ecs') || q.includes('alibaba')) {
+    return ['Manufacturing', 'Ecommerce', 'Logistics'];
+  }
+  
+  // Default: most common industries
+  return ['Banking', 'AI_ML', 'Healthcare', 'Ecommerce', 'Fintech'];
+};
+
+export const useSearch = () => {
+  const [searchResults, setSearchResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const searchServices = async (query) => {
+    if (!query || query.trim() === '') {
+      setSearchResults([]);
+      return [];
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      const queryLower = query.toLowerCase().trim();
+      console.log('🔍 Searching for service/instance type:', queryLower);
+      
+      // Check search cache first
+      const cacheKey = queryLower;
+      if (cache.searchCache.has(cacheKey)) {
+        const cached = cache.searchCache.get(cacheKey);
+        const cacheAge = Date.now() - (cache.lastUpdate.get(cacheKey) || 0);
+        if (cacheAge < CACHE_TTL) {
+          console.log('📋 Returning cached search results');
+          setSearchResults(cached);
+          setLoading(false);
+          return cached;
+        }
+      }
+
+      // PROGRESSIVE SEARCH: Start with relevant industries first
+      const priorityIndustries = getRelevantIndustries(queryLower);
+      const allIndustries = [
+        'AI_ML', 'Agriculture', 'Automotive', 'Banking', 'BigData_Analytics', 
+        'Cybersecurity', 'Ecommerce', 'Education', 'Energy', 'Fintech', 
+        'Gaming', 'Government', 'Healthcare', 'IoT_Platforms', 'Logistics', 
+        'Manufacturing', 'Media_and_Entertainment', 'Pharmaceutical', 'Retail', 'Telecommunications'
+      ];
+      
+      // Search priority industries first, then others if needed
+      let searchIndustries = [...priorityIndustries];
+      const remainingIndustries = allIndustries.filter(ind => !priorityIndustries.includes(ind));
+      
+      console.log(`🎯 Starting with ${searchIndustries.length} priority industries:`, searchIndustries);
+      
+      // PHASE 1: Search priority industries first
+      const searchPriorityIndustries = async (industries) => {
+        const promises = industries.map(async (industry) => {
+        // Check cache first
+        if (cache.recommendations.has(industry)) {
+          return cache.recommendations.get(industry);
+        }
+
+        try {
+          // Add timeout to prevent hanging
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+          
+          const response = await fetch('/api/recommend', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              industry: industry,
+              limit: 50 // Balanced limit for speed vs coverage
+            }),
+            signal: controller.signal
+          });
+
+          clearTimeout(timeoutId);
+
+          if (response.ok) {
+            const recommendations = await response.json();
+            if (Array.isArray(recommendations)) {
+              const recommendationsWithIndustry = recommendations.map(rec => ({
+                ...rec,
+                searchIndustry: industry
+              }));
+              // Cache the results
+              cache.recommendations.set(industry, recommendationsWithIndustry);
+              return recommendationsWithIndustry;
+            }
+          }
+        } catch (error) {
+          if (error.name !== 'AbortError') {
+            console.warn(`Error fetching ${industry}:`, error);
+          }
+        }
+        return [];
+      });
+
+      // Wait for all requests with faster timeout
+      const allResponses = await Promise.allSettled(recommendationPromises);
+      const allRecommendations = allResponses
+        .filter(result => result.status === 'fulfilled')
+        .map(result => result.value)
+        .flat();
+
+      console.log(`🔍 Total recommendations fetched: ${allRecommendations.length}`);
+      console.log(`📋 Sample instances found:`, allRecommendations.slice(0, 5).map(r => r.instance || r.instance_type || r.instanceType));
+
+      // SMART SEARCH - Improved matching algorithm
+      const filteredResults = allRecommendations.filter(rec => {
+        const instanceName = (rec.instance || rec.instance_type || rec.instanceType || '').toLowerCase();
+        const provider = (rec.serviceProvider || rec.provider || '').toLowerCase();
+        const category = (rec.category || '').toLowerCase();
+        const purpose = (rec.purpose || '').toLowerCase();
+        
+        // Primary match: instance name (most important)
+        if (instanceName.includes(queryLower) || 
+            instanceName.startsWith(queryLower) ||
+            queryLower.split('.').some(part => instanceName.includes(part))) {
+          return true;
+        }
+        
+        // Secondary matches: other fields
+        if (provider.includes(queryLower) || 
+            category.includes(queryLower) || 
+            purpose.includes(queryLower)) {
+          return true;
+        }
+        
+        // Special cases for instance type variations
+        const normalizedInstance = instanceName.replace(/[.-]/g, '');
+        const normalizedQuery = queryLower.replace(/[.-]/g, '');
+        if (normalizedInstance.includes(normalizedQuery) || 
+            normalizedQuery.includes(normalizedInstance.substring(0, 3))) {
+          return true;
+        }
+        
+        return false;
+      });
+
+      // Group by instance and collect all purposes
+      const groupedResults = new Map();
+
+      filteredResults.forEach(item => {
+        const key = `${item.instance}-${item.serviceProvider}-${item.region}-${item.vcpu}-${item.ram}`;
+        
+        if (groupedResults.has(key)) {
+          // Add data to existing group
+          const existing = groupedResults.get(key);
+          
+          // Add purpose if new
+          const newPurpose = item.purpose;
+          if (newPurpose && !existing.purposes.includes(newPurpose)) {
+            existing.purposes.push(newPurpose);
+          }
+          
+          // Add industry if new (use the industry from the search source)
+          const newIndustry = item.industry || item.searchIndustry;
+          if (newIndustry && !existing.industries.includes(newIndustry)) {
+            existing.industries.push(newIndustry);
+          }
+          
+          // Add scale if new
+          const newScale = item.scale;
+          if (newScale && !existing.scales.includes(newScale)) {
+            existing.scales.push(newScale);
+          }
+        } else {
+          // Create new group
+          const industry = item.industry || item.searchIndustry;
+          groupedResults.set(key, {
+            ...item,
+            purposes: item.purpose ? [item.purpose] : [],
+            industries: industry ? [industry] : [],
+            scales: item.scale ? [item.scale] : [],
+            matchedBy: 'instance',
+            matchedValue: item.instance || item.instance_type || item.instanceType
+          });
+        }
+      });
+
+      const uniqueResults = Array.from(groupedResults.values());
+
+      console.log(`🔍 Filtered results for "${queryLower}":`, filteredResults.length);
+      console.log(`📋 Filtered instances:`, filteredResults.slice(0, 10).map(r => r.instance || r.instance_type || r.instanceType));
+      console.log('✅ Final grouped results:', uniqueResults.length);
+      console.log(`📋 Final instances:`, uniqueResults.slice(0, 10).map(r => r.instance || r.instance_type || r.instanceType));
+      
+      setSearchResults(uniqueResults);
+      return uniqueResults;
+      
+    } catch (err) {
+      console.error('❌ Error searching services:', err);
+      setError(`Failed to search services: ${err.message}`);
+      setSearchResults([]);
+      return [];
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return { 
+    searchResults, 
+    loading, 
+    error, 
+    searchServices,
+    setSearchResults,
+    setError
+  };
+};
