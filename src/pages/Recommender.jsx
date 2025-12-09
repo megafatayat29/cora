@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Search, Zap, Loader2, X } from "lucide-react";
+import { Search, Zap, Loader2, X, Network } from "lucide-react";
 import { useIndustries } from "../hooks/useIndustries";
 import { useScales } from "../hooks/useScales";
 import { usePurposes, useProviders, useCategories } from "../hooks/useFormData";
@@ -8,12 +8,18 @@ import { useRecommendations } from "../hooks/useRecommendations";
 import { useSearch } from "../hooks/useSearch";
 import { TagInput } from "../components/TagInput";
 import KnowledgeGraph from "../components/KnowledgeGraph";
+import RecommendationResultTabs from "../components/RecommendationResultTabs";
 
 export default function Recommender({ selectedIndustry }) {
   const [activeTab, setActiveTab] = useState("recommender"); // Start with recommender tab
   const [searchQuery, setSearchQuery] = useState("");
   const [showResults, setShowResults] = useState(false);
+  const [showNLTab, setShowNLTab] = useState(false);
   
+  const [nlText, setNlText] = useState("");
+  const [nlLoading, setNlLoading] = useState(false);
+  const [nlResponse, setNlResponse] = useState(null);
+
   // Search hook
   const { searchResults, loading: searchLoading, error: searchError, searchServices } = useSearch();
   
@@ -51,9 +57,18 @@ export default function Recommender({ selectedIndustry }) {
     orderBy: "Price (Low to High)",
     recommendations: 100,
   });
+
+  const [nlFormData, setNlFormData] = useState({
+    industry: "",
+    scale: "",
+    purposes: [],
+    category: "Compute",
+    region: "",
+    providers: [],
+    orderBy: "AI Match",
+  });
   
   const [showRecommendations, setShowRecommendations] = useState(false);
-  const [activeResultTab, setActiveResultTab] = useState("results");
   
   // Search handler
   const handleSearch = async () => {
@@ -79,6 +94,42 @@ export default function Recommender({ selectedIndustry }) {
       } catch (error) {
         console.error('❌ Failed to get recommendations with updated form:', error);
       }
+    }
+  };
+
+  const handleInferRecommend = async () => {
+    if (!nlText.trim()) {
+      alert("Please enter text.");
+      return;
+    }
+
+    try {
+      setNlLoading(true);
+      setNlResponse(null);
+
+      const response = await fetch("/api/infer_and_recommend", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: nlText }),
+      });
+
+      const data = await response.json();
+      setNlResponse(data);
+      setNlFormData({
+        industry: data.entities?.industry || "",
+        region: data.entities?.region || "",
+        providers: data.entities?.providers || [],
+        purposes: data.entities?.purposes || [],
+        scale: data.entities?.scale || "",
+        category: "Compute",
+        orderBy: "AI Match",
+      });
+
+    } catch (err) {
+      console.error("AI Recommender Error:", err);
+      alert("Something went wrong.");
+    } finally {
+      setNlLoading(false);
     }
   };
 
@@ -110,7 +161,6 @@ export default function Recommender({ selectedIndustry }) {
     try {
       await getRecommendations(formData);
       setShowRecommendations(true);
-      setActiveResultTab("results");
     } catch (error) {
       console.error('Failed to get recommendations:', error);
     }
@@ -120,6 +170,12 @@ export default function Recommender({ selectedIndustry }) {
     <div className="min-h-screen bg-gray-50">
       {/* Tab Navigation */}
       <div className="bg-white border-b border-gray-200">
+        {/* Hidden toggle button */}
+        <button
+          onClick={() => setShowNLTab(prev => !prev)}
+          className="fixed top-2 right-2 w-2 h-2 opacity-20 hover:opacity-60 transition rounded-full bg-gray-300"
+          title="Toggle AI Text Recommender"
+        ></button>
         <div className="max-w-7xl mx-auto px-6">
           <div className="flex gap-12">
             <button
@@ -148,6 +204,21 @@ export default function Recommender({ selectedIndustry }) {
                 Cloud Service Recommender
               </div>
             </button>
+            {showNLTab && (
+              <button
+                onClick={() => setActiveTab("nl_recommender")}
+                className={`py-4 px-2 font-medium border-b-2 transition-colors ${
+                  activeTab === "nl_recommender"
+                    ? "border-green-500 text-green-600"
+                    : "border-transparent text-gray-600 hover:text-gray-800"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Network size={20} />
+                  AI Text Recommender
+                </div>
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -600,11 +671,14 @@ export default function Recommender({ selectedIndustry }) {
                     disabled={categoriesLoading}
                   >
                     <option value="">Choose Category</option>
-                    {categories.map((category) => (
-                      <option key={category.id} value={category.value}>
-                        {category.name}
-                      </option>
-                    ))}
+                    {categories
+                      .filter((category) => category.value.toLowerCase() === "compute")
+                      .map((category) => (
+                        <option key={category.id} value={category.value}>
+                          {category.name}
+                        </option>
+                      ))
+                    }
                   </select>
                 </div>
               </div>
@@ -688,227 +762,71 @@ export default function Recommender({ selectedIndustry }) {
 
             {/* Results Section */}
             {showRecommendations && (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5 }}
-                className="bg-white rounded-lg border border-gray-200 overflow-hidden"
+              <RecommendationResultTabs
+                recommendations={recommendations}
+                formData={formData}
+                loading={recommendationsLoading}
+                error={recommendationsError}
+              />
+            )}
+          </motion.div>
+        )}
+
+        {activeTab === "nl_recommender" && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3 }}
+            className="max-w-4xl mx-auto space-y-8"
+          >
+            <div className="text-center">
+              <h2 className="text-3xl font-bold text-gray-900 mb-2">AI Text-Based Cloud Recommender</h2>
+              <p className="text-gray-600">
+                Describe your business context in natural language and let AI infer the best cloud configuration.
+              </p>
+            </div>
+
+            {/* Textarea Input */}
+            <div className="bg-white rounded-lg border border-gray-200 p-6 space-y-4">
+              <label className="block text-sm font-medium text-gray-800">Describe your cloud needs</label>
+              
+              <textarea
+                value={nlText}
+                onChange={(e) => setNlText(e.target.value)}
+                className="w-full h-40 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500"
+                placeholder="Example: We are a medium fintech company using AWS for analytics in Singapore…"
+              />
+
+              <button
+                onClick={handleInferRecommend}
+                disabled={nlLoading}
+                className={`px-10 py-3 rounded-lg font-medium text-white bg-green-600 hover:bg-green-700 transition ${
+                  nlLoading && "opacity-50 cursor-not-allowed"
+                }`}
               >
-                {/* Tabs */}
-                <div className="border-b border-gray-200">
-                  <div className="flex">
-                    <button 
-                      onClick={() => setActiveResultTab("results")}
-                      className={`px-6 py-3 font-medium ${
-                        activeResultTab === "results"
-                          ? 'text-[#6E39CB] border-b-2 border-[#6E39CB]'
-                          : 'text-gray-500 hover:text-gray-700'
-                      }`}
-                    >
-                      Recommendation Results
-                    </button>
-                    <button 
-                      onClick={() => setActiveResultTab("graph")}
-                      className={`px-6 py-3 font-medium ${
-                        activeResultTab === "graph"
-                          ? 'text-[#6E39CB] border-b-2 border-[#6E39CB]'
-                          : 'text-gray-500 hover:text-gray-700'
-                      }`}
-                    >
-                      Knowledge Graph
-                    </button>
-                  </div>
-                </div>
+                {nlLoading ? "Processing..." : "Analyze & Recommend"}
+              </button>
+            </div>
 
-                {/* Content */}
-                {activeResultTab === "results" && (
-                  <div className="p-4">
-                    {recommendationsError && (
-                      <div className="bg-red-50 border border-red-200 rounded-md p-4 mb-4">
-                        <p className="text-red-700 text-sm">{recommendationsError}</p>
-                      </div>
-                    )}
+            {/* Display AI Output */}
+            {nlResponse && (
+              <div className="bg-white rounded-lg border border-gray-200 p-6 space-y-6">
+                <h3 className="text-xl font-bold">Extracted Entities</h3>
+                <pre className="bg-gray-100 p-4 rounded text-sm overflow-x-auto">
+                  {JSON.stringify(nlResponse.entities, null, 2)}
+                </pre>
 
-                    {recommendations && recommendations.length === 0 && !recommendationsLoading && (
-                      <div className="text-center py-8 text-gray-500">
-                        <Search className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                        <p>No recommendations found for your criteria.</p>
-                      </div>
-                    )}
+                <h3 className="text-xl font-bold">Recommendations</h3>
 
-                    {recommendations && recommendations.length > 0 && (
-                      <div>
-                        {(() => {
-                          // Calculate total unique instances for display
-                          const groupedRecsForCount = new Map();
-                          recommendations.forEach(rec => {
-                            const key = JSON.stringify({
-                              instance: rec.instance || rec.instance_type || rec.instanceType || 'N/A',
-                              provider: rec.serviceProvider || rec.provider || 'N/A',
-                              category: rec.category || 'N/A',
-                              vcpu: rec.vcpu || rec.vCPU || 'N/A',
-                              ram: rec.ram || rec.RAM || 'N/A',
-                              price: rec.price || rec.price_per_hour || rec.pricePerHour || 'N/A'
-                            });
-                            if (!groupedRecsForCount.has(key)) {
-                              groupedRecsForCount.set(key, true);
-                            }
-                          });
-                          const totalInstances = groupedRecsForCount.size;
-                          const showTopTenLabel = totalInstances > 10;
-                          const displayedCount = Math.min(totalInstances, 10);
-                          
-                          return (
-                            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
-                              <p className="text-sm text-blue-800">
-                                <span className="font-medium">
-                                  {showTopTenLabel ? 'Top 10' : `${displayedCount}`} cloud service recommendations found
-                                </span>
-                                {showTopTenLabel && (
-                                  <span className="text-blue-600 ml-2">
-                                    (showing top 10 based on your sorting preference)
-                                  </span>
-                                )}
-                              </p>
-                            </div>
-                          );
-                        })()}
-                        
-                        <div className="overflow-x-auto">
-                          <table className="w-full">
-                          <thead className="bg-gray-50">
-                            <tr>
-                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Instance Type</th>
-                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Provider</th>
-                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
-                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Purpose</th>
-                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">vCPU</th>
-                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">RAM</th>
-                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Price/Hour</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-200">
-                            {(() => {
-                              // Group recommendations by instance details (excluding purpose)
-                              const groupedRecs = new Map();
-                              
-                              recommendations.forEach(rec => {
-                                const key = JSON.stringify({
-                                  instance: rec.instance || rec.instance_type || rec.instanceType || 'N/A',
-                                  provider: rec.serviceProvider || rec.provider || 'N/A',
-                                  category: rec.category || 'N/A',
-                                  vcpu: rec.vcpu || rec.vCPU || 'N/A',
-                                  ram: rec.ram || rec.RAM || 'N/A',
-                                  price: rec.price || rec.price_per_hour || rec.pricePerHour || 'N/A'
-                                });
-                                
-                                if (groupedRecs.has(key)) {
-                                  // Add purpose to existing group
-                                  const existing = groupedRecs.get(key);
-                                  const newPurpose = rec.purpose || rec.purposes || 'N/A';
-                                  if (!existing.purposes.includes(newPurpose)) {
-                                    existing.purposes.push(newPurpose);
-                                  }
-                                } else {
-                                  // Create new group
-                                  groupedRecs.set(key, {
-                                    instance: rec.instance || rec.instance_type || rec.instanceType || 'N/A',
-                                    provider: rec.serviceProvider || rec.provider || 'N/A',
-                                    category: rec.category || 'N/A',
-                                    vcpu: rec.vcpu || rec.vCPU || 'N/A',
-                                    ram: rec.ram || rec.RAM || 'N/A',
-                                    price: rec.price || rec.price_per_hour || rec.pricePerHour || 'N/A',
-                                    purposes: [rec.purpose || rec.purposes || 'N/A']
-                                  });
-                                }
-                              });
-
-                              // Convert to array - API already handles sorting based on ranking_preference
-                              let sortedRecs = Array.from(groupedRecs.values());
-                              
-                              // API handles all sorting now - no client-side sorting needed
-                              // All ranking_preference values (termurah, balanced, terkuat) are handled by API
-                              
-                              // Limit to maximum 10 instances
-                              const limitedRecs = sortedRecs.slice(0, 10);
-
-                              return limitedRecs.map((rec, index) => (
-                                <tr key={index} className="hover:bg-gray-50">
-                                  <td className="px-4 py-3 text-sm font-medium text-gray-900">{rec.instance}</td>
-                                  <td className="px-4 py-3 text-sm text-gray-700">{rec.provider}</td>
-                                  <td className="px-4 py-3 text-sm text-gray-700">{rec.category}</td>
-                                  <td className="px-4 py-3 text-sm">
-                                    <div className="flex flex-wrap gap-1">
-                                      {rec.purposes.map((purpose, idx) => (
-                                        <span 
-                                          key={idx}
-                                          className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200"
-                                        >
-                                          {purpose}
-                                        </span>
-                                      ))}
-                                    </div>
-                                  </td>
-                                  <td className="px-4 py-3 text-sm text-gray-700">{rec.vcpu}</td>
-                                  <td className="px-4 py-3 text-sm text-gray-700">{rec.ram} GB</td>
-                                  <td className="px-4 py-3 text-sm font-medium text-green-600">
-                                    ${rec.price}/hour
-                                  </td>
-                                </tr>
-                              ));
-                            })()}
-                          </tbody>
-                        </table>
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                {nlResponse.recommendation?.length > 0 ? (
+                  <RecommendationResultTabs
+                    recommendations={nlResponse.recommendation}
+                    formData={nlFormData}
+                  />
+                ) : (
+                  <p className="text-gray-500">No recommendations found.</p>
                 )}
-
-                {activeResultTab === "graph" && (
-                  <div className="p-4">
-                    {(() => {
-                      // Calculate total unique instances for Knowledge Graph display
-                      const groupedRecsForCount = new Map();
-                      recommendations.forEach(rec => {
-                        const key = JSON.stringify({
-                          instance: rec.instance || rec.instance_type || rec.instanceType || 'N/A',
-                          provider: rec.serviceProvider || rec.provider || 'N/A',
-                          category: rec.category || 'N/A',
-                          vcpu: rec.vcpu || rec.vCPU || 'N/A',
-                          ram: rec.ram || rec.RAM || 'N/A',
-                          price: rec.price || rec.price_per_hour || rec.pricePerHour || 'N/A'
-                        });
-                        if (!groupedRecsForCount.has(key)) {
-                          groupedRecsForCount.set(key, true);
-                        }
-                      });
-                      const totalInstances = groupedRecsForCount.size;
-                      const showTopTenLabel = totalInstances > 10;
-                      const displayedCount = Math.min(totalInstances, 10);
-                      
-                      return (
-                        <div className="mb-4 p-3 bg-[#F5F0FE] border border-[#D1B3F9] rounded-md">
-                          <p className="text-sm text-#4A1A7A">
-                            <span className="font-medium">
-                              {showTopTenLabel ? 'Top 10' : `${displayedCount}`} cloud service recommendations in graph
-                            </span>
-                            {showTopTenLabel && (
-                              <span className="text-[#6E39CB] ml-2">
-                                (showing top 10 based on your sorting preference)
-                              </span>
-                            )}
-                          </p>
-                        </div>
-                      );
-                    })()}
-                    
-                    <div className="h-[600px] w-full border border-gray-200 rounded-lg overflow-hidden">
-                      <KnowledgeGraph recommendations={recommendations} formData={formData} />
-                    </div>
-                  </div>
-                )}
-              </motion.div>
+              </div>
             )}
           </motion.div>
         )}

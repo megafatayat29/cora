@@ -6,11 +6,11 @@ import { motion } from "framer-motion";
  * - activeMainTab: string ('home'|'recommender'|'resources')
  * - setActiveMainTab: function
  */
-export default function Header({ activeMainTab, setActiveMainTab }) {
+export default function Header({ activeMainTab, setActiveMainTab, showChatBotTab }) {
   const tabs = [
     { id: "home", label: "Home" },
     { id: "recommender", label: "Cloud Recommender" },
-    { id: "chatbot", label: "Chatbot" },
+    ...(showChatBotTab ? [{ id: "chatbot", label: "Chatbot" }] : []),
     { id: "resources", label: "Contact Us" },
   ];
 
