@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-const API_BASE = "http://mentorku.cloud:7000";
+const API_BASE = "/api";
 
 export default function Chatbot() {
   const [messages, setMessages] = useState([
