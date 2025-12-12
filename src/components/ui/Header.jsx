@@ -10,7 +10,8 @@ export default function Header({ activeMainTab, setActiveMainTab, showChatBotTab
   const tabs = [
     { id: "home", label: "Home" },
     { id: "recommender", label: "Cloud Recommender" },
-    ...(showChatBotTab ? [{ id: "chatbot", label: "Chatbot" }] : []),
+    // ...(showChatBotTab ? [{ id: "chatbot", label: "Chatbot" }] : []),
+    { id: "chatbot", label: "Chatbot" },
     { id: "resources", label: "Contact Us" },
   ];
 

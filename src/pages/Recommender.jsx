@@ -14,7 +14,7 @@ export default function Recommender({ selectedIndustry }) {
   const [activeTab, setActiveTab] = useState("recommender"); // Start with recommender tab
   const [searchQuery, setSearchQuery] = useState("");
   const [showResults, setShowResults] = useState(false);
-  const [showNLTab, setShowNLTab] = useState(false);
+  // const [showNLTab, setShowNLTab] = useState(false);
   
   const [nlText, setNlText] = useState("");
   const [nlLoading, setNlLoading] = useState(false);
@@ -171,11 +171,11 @@ export default function Recommender({ selectedIndustry }) {
       {/* Tab Navigation */}
       <div className="bg-white border-b border-gray-200">
         {/* Hidden toggle button */}
-        <button
+        {/* <button
           onClick={() => setShowNLTab(prev => !prev)}
           className="fixed top-2 right-2 w-2 h-2 opacity-20 hover:opacity-60 transition rounded-full bg-gray-300"
           title="Toggle AI Text Recommender"
-        ></button>
+        ></button> */}
         <div className="max-w-7xl mx-auto px-6">
           <div className="flex gap-12">
             <button
@@ -204,21 +204,19 @@ export default function Recommender({ selectedIndustry }) {
                 Cloud Service Recommender
               </div>
             </button>
-            {showNLTab && (
-              <button
-                onClick={() => setActiveTab("nl_recommender")}
-                className={`py-4 px-2 font-medium border-b-2 transition-colors ${
-                  activeTab === "nl_recommender"
-                    ? "border-green-500 text-green-600"
-                    : "border-transparent text-gray-600 hover:text-gray-800"
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <Network size={20} />
-                  AI Text Recommender
-                </div>
-              </button>
-            )}
+            <button
+              onClick={() => setActiveTab("nl_recommender")}
+              className={`py-4 px-2 font-medium border-b-2 transition-colors ${
+                activeTab === "nl_recommender"
+                  ? "border-green-500 text-green-600"
+                  : "border-transparent text-gray-600 hover:text-gray-800"
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Network size={20} />
+                AI Text Recommender
+              </div>
+            </button>
           </div>
         </div>
       </div>
